@@ -38,25 +38,31 @@ class AdzunaAPIClient(JobAPIClient):
         }
         if remote: 
             params['where'] = 'remote'
+
         try:
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
             jobs_data = response.json()['results']
 
             return [
-                JobListing(
-                    job_title=job['title'],
-                    company_name=job['company']['display_name'],
-                    job_location=job['location']['display_name'],
-                    job_description=job['description'],
-                    salary_low=job.get('salary_min'),
-                    salary_high=job.get('salary_max'),
-                    source='Adzuna'
-                ) for job in jobs_data if self._check_experience(job, max_experience)
+                self._create_job_listing(job)
+                for job in jobs_data
+                if self._check_experience(job, max_experience)
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             return []
+        
+    def _create_job_listing(self, job: dict) -> JobListing:
+        return JobListing(
+            job_title=job.get('title', 'N/A'),
+            company_name=job.get('company', {}).get('display_name', 'N/A'),
+            job_location=job.get('location', {}).get('display_name', 'N/A'),
+            job_description=job.get('description', 'N/A'),
+            salary_low=job.get('salary_min'),
+            salary_high=job.get('salary_max'),
+            source='Adzuna'
+        )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         # Simplistic check for now, return to implement more sophisticated parsing
@@ -76,36 +82,43 @@ class USAJobsAPIClient(JobAPIClient):
             'Authorization-Key': self.auth_key,
             'User-Agent': self.email,
             'Host': 'data.usajobs.gov',
-            'Content-Type': 'application/json'
         }
         params = {
             'Keyword': query,
             'LocationName': location,
             'ResultsPerPage': limit,
             'Radius': distance,
-            'JobCategoryCode': '2210',
         }
         if remote:
             params['RemoteIndicator'] = 'Yes'
+
         try:
             response = requests.get(self.base_url, headers=headers, params=params)
             response.raise_for_status()
             jobs_data = response.json()['SearchResult']['SearchResultItems']
 
             return [
-                JobListing(
-                    job_title=job['MatchedObjectDescriptor']['PositionTitle'],
-                    company_name=job['MatchedObjectDescriptor']['OrganizationName'],
-                    job_location=job['MatchedObjectDescriptor']['PositionLocationDisplay'],
-                    job_description=job['MatchedObjectDescriptor']['QualificationSummary'],
-                    salary_low=float(job['MatchedObjectDescriptor']['PositionRemuneration'][0]['MinimumRange']),
-                    salary_high=float(job['MatchedObjectDescriptor']['PositionRemuneration'][0]['MaximumRange']),
-                    source='USA Jobs'
-                ) for job in jobs_data if self._check_experience(job, max_experience)
+                self._create_job_listing(job)
+                for job in jobs_data
+                if self._check_experience(job, max_experience)
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
+            logger.debug(f"USA Jobs API request details: URL: {response.url}, Headers: {headers}, Params: {params}")
+            logger.debug(f"USA Jobs API response: {response.text}")
             return []
+        
+    def _create_job_listing(self, job: dict) -> JobListing:
+        job_data = job['MatchedObjectDescriptor']
+        return JobListing(
+            job_title=job_data.get('PositionTitle', 'N/A'),
+            company_name=job_data.get('OrganizationName', 'N/A'),
+            job_location=job_data.get('PositionLocationDisplay', 'N/A'),
+            job_description=job_data.get('QualificationSummary', 'N/A'),
+            salary_low=float(job_data['PositionRemuneration'][0]['MinimumRange']) if job_data.get('PositionRemuneration') else None,
+            salary_high=float(job_data['PositionRemuneration'][0]['MaximumRange']) if job_data.get('PositionRemuneration') else None,
+            source='USA Jobs'
+        )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         # Simplistic check for now, return to implement more sophisticated parsing
