@@ -71,7 +71,7 @@ class USAJobsAPIClient(JobAPIClient):
 
     @sleep_and_retry
     @limits(calls=50, period=60)
-    def fetch_jobs(self, query: str, location: str, limit: int = 50) -> list[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int = 50, remote: bool = True, max_experience: int = 5, limit: int = 50) -> list[JobListing]:
         headers = {
             'Authorization-Key': self.auth_key,
             'User-Agent': self.email,
@@ -81,8 +81,12 @@ class USAJobsAPIClient(JobAPIClient):
         params = {
             'Keyword': query,
             'LocationName': location,
-            'ResultsPerPage': limit
+            'ResultsPerPage': limit,
+            'Radius': distance,
+            'JobCategoryCode': '2210',
         }
+        if remote:
+            params['RemoteIndicator'] = 'Yes'
         try:
             response = requests.get(self.base_url, headers=headers, params=params)
             response.raise_for_status()
@@ -97,8 +101,13 @@ class USAJobsAPIClient(JobAPIClient):
                     salary_low=float(job['MatchedObjectDescriptor']['PositionRemuneration'][0]['MinimumRange']),
                     salary_high=float(job['MatchedObjectDescriptor']['PositionRemuneration'][0]['MaximumRange']),
                     source='USA Jobs'
-                ) for job in jobs_data
+                ) for job in jobs_data if self._check_experience(job, max_experience)
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
             return []
+        
+    def _check_experience(self, job: dict, max_experience: int) -> bool:
+        # Simplistic check for now, return to implement more sophisticated parsing
+        qualifications = job['MatchObjectDescriptor']['QualificationSummary'].lower()
+        return 'experience' not in qualifications or f"{max_experience} years" in qualifications
