@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class JobAPIClient(ABC):
     @abstractmethod
-    def fetch_jobs(self, query: str, location: str, limit: int) -> list[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int, remote: bool, max_experience: int, limit: int) -> list[JobListing]:
         pass
 
 
@@ -25,15 +25,19 @@ class AdzunaAPIClient(JobAPIClient):
 
     @sleep_and_retry
     @limits(calls=100, period=60)
-    def fetch_jobs(self, query: str, location: str, limit: int = 50) -> list[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int = 50, remote: bool = True, max_experience: int = 5, limit: int = 50) -> list[JobListing]:
         params = {
             'app_id': self.app_id,
             'app_key': self.api_key,
             'results_per_page': limit,
             'what': query,
             'where': location,
+            'distance': distance,
+            'max_days_old': 30, # Ensure recent postings
             'content-type': 'application/json'
         }
+        if remote: 
+            params['where'] = 'remote'
         try:
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
@@ -48,12 +52,16 @@ class AdzunaAPIClient(JobAPIClient):
                     salary_low=job.get('salary_min'),
                     salary_high=job.get('salary_max'),
                     source='Adzuna'
-                ) for job in jobs_data
+                ) for job in jobs_data if self._check_experience(job, max_experience)
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             return []
         
+    def _check_experience(self, job: dict, max_experience: int) -> bool:
+        # Simplistic check for now, return to implement more sophisticated parsing
+        return 'experience' not in job['description'].lower() or f"{max_experience} years" in job['description'].lower()
+
 
 class USAJobsAPIClient(JobAPIClient):
     def __init__(self) -> None:
