@@ -124,3 +124,6 @@ class USAJobsAPIClient(JobAPIClient):
         # Simplistic check for now, return to implement more sophisticated parsing
         qualifications = job['MatchObjectDescriptor']['QualificationSummary'].lower()
         return 'experience' not in qualifications or f"{max_experience} years" in qualifications
+    
+
+    # USA job codes: [(422, Data Analyst), (621, Software Developer)] - found on codelist/cyberworkroles - verify then add to filters
