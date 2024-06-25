@@ -18,10 +18,15 @@ def main() -> None:
     collector = JobDataCollector(adzuna_client, usa_jobs_client)
 
     try:
+        logger.info("Starting job collection...")
         jobs = collector.collect_jobs(
             query="junior software developer",
             location="Denver, CO"
         )
+
+        logger.info(f"Collected {len(jobs)} jobs in total.")
+        logger.info(f"Jobs from Adzuna: {len([job for job in jobs if job.source == 'Adzuna'])}")
+        logger.info(f"Jobs from USA Jobs: {len([job for job in jobs if job.source == 'USA Jobs'])}")
 
         if not jobs:
             logger.warning("No jobs were found. Check your search criteria and API keys.")

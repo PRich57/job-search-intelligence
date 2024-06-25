@@ -7,8 +7,8 @@ from ratelimit import limits, sleep_and_retry
 
 from job_listing import JobListing
 from config import (
-    ADZUNA_APP_ID, ADZUNA_API_KEY, USA_JOBS_API_KEY, USA_JOBS_EMAIL,
-    ADZUNA_BASE_URL, USA_JOBS_BASE_URL,
+    ADZUNA_APP_ID, ADZUNA_API_KEY, ADZUNA_BASE_URL,
+    USA_JOBS_API_KEY, USA_JOBS_EMAIL, USA_JOBS_BASE_URL,
     DEFAULT_DISTANCE, DEFAULT_REMOTE, DEFAULT_MAX_EXPERIENCE, DEFAULT_LIMIT
 )
 
@@ -39,7 +39,7 @@ class AdzunaAPIClient(JobAPIClient):
             "content-type": "application/json"
         }
         if remote:
-            params["where"] = "remote"
+            params["where"] = f"{location} AND remote"
 
         try:
             response = requests.get(self.base_url, params=params)
@@ -53,6 +53,8 @@ class AdzunaAPIClient(JobAPIClient):
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
+            logger.error(f"Response content: {response.text}")
+            logger.debug(f"Adzuna API request details: URL: {response.url}, Params: {params}")
             return []
         
     def _create_job_listing(self, job: dict) -> JobListing:
@@ -104,8 +106,8 @@ class USAJobsAPIClient(JobAPIClient):
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
+            logger.error(f"Response content: {response.text}")
             logger.debug(f"USA Jobs API request details: URL: {response.url}, Headers: {headers}, Params: {params}")
-            logger.debug(f"USA Jobs API response: {response.text}")
             return []
         
     def _create_job_listing(self, job: dict) -> JobListing:
