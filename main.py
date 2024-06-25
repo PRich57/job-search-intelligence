@@ -1,22 +1,15 @@
 import logging
 from datetime import datetime
 
-from dotenv import load_dotenv
-
+from config import LOG_LEVEL, LOG_FORMAT, OUTPUT_DIR
 from analyze_data import analyze_data
 from api_clients import AdzunaAPIClient, USAJobsAPIClient
 from collect_data import JobDataCollector
-
+from visualize_data import generate_visualizations
 
 # Set up logging
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
-
-
-# Load environment variables
-load_dotenv()
-
 
 def main() -> None:
     adzuna_client = AdzunaAPIClient()
@@ -27,26 +20,25 @@ def main() -> None:
     try:
         jobs = collector.collect_jobs(
             query="junior software developer",
-            location="Denver, CO",
-            distance=50,
-            remote=True,
-            max_experience=5,
-            limit=50
+            location="Denver, CO"
         )
 
         if not jobs:
             logger.warning("No jobs were found. Check your search criteria and API keys.")
         else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            collector.save_to_csv(jobs, f"../../job-listings/job_listings_{timestamp}.csv")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{OUTPUT_DIR}/job_listings_{timestamp}.csv"
+            collector.save_to_csv(jobs, filename)
 
             analysis = analyze_data(jobs)
             logger.info("Data Analysis Results:")
             for key, value in analysis.items():
                 logger.info(f"{key}: {value}")
+
+            generate_visualizations(jobs)
+
     except Exception as e:
         logger.error(f"An error occurred: {e}", exc_info=True)
-
 
 if __name__ == "__main__":
     main()

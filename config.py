@@ -25,4 +25,4 @@ LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 
 # Output directory for CSV files
-OUTPUT_DIR = "job_listings"
+OUTPUT_DIR = "../../job-listings"
