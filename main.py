@@ -1,17 +1,20 @@
 import logging
 from datetime import datetime
 
-from config import LOG_LEVEL, LOG_FORMAT, OUTPUT_DIR
+from config import LOG_FORMAT, OUTPUT_DIR, ADZUNA_APP_ID, USA_JOBS_API_KEY
 from analyze_data import analyze_data
 from api_clients import AdzunaAPIClient, USAJobsAPIClient
 from collect_data import JobDataCollector
 from visualize_data import generate_visualizations
 
 # Set up logging
-logging.basicConfig(level=getattr(logging, LOG_LEVEL), format=LOG_FORMAT)
+logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 def main() -> None:
+    logger.info(f"Adzuna App ID: {'Set' if ADZUNA_APP_ID else 'Not set'}")
+    logger.info(f"USA Jobs API Key: {'Set' if USA_JOBS_API_KEY else 'Not set'}")
+
     adzuna_client = AdzunaAPIClient()
     usa_jobs_client = USAJobsAPIClient()
 

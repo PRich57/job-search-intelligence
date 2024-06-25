@@ -46,30 +46,51 @@ class AdzunaAPIClient(JobAPIClient):
             response.raise_for_status()
             jobs_data = response.json()["results"]
 
+            logger.info(f"Adzuna API returned {len(jobs_data)} jobs")
+            logger.debug(f"First job location: {jobs_data[0]['location']['display_name'] if jobs_data else 'N/A'}")
+
             return [
-                self._create_job_listing(job)
-                for job in jobs_data
-                if self._check_experience(job, max_experience)
+                job_listing for job_listing in
+                (self._create_job_listing(job) for job in jobs_data)
+                if job_listing is not None and self._check_experience(job, max_experience)
             ]
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             logger.error(f"Response content: {response.text}")
-            logger.debug(f"Adzuna API request details: URL: {response.url}, Params: {params}")
+            logger.error(f"Request URL: {response.url}")
+            logger.error(f"Request parameters: {params}")
             return []
         
-    def _create_job_listing(self, job: dict) -> JobListing:
+    def _create_job_listing(self, job: dict) -> JobListing | None:
+        job_location = job.get("location", {}).get("display_name", "").lower()
+        if "denver" not in job_location and "colorado" not in job_location:
+            return None
+
+        salary_min = job.get("salary_min")
+        salary_max = job.get("salary_max")
+        
+        logger.debug(f"Raw salary data: min={salary_min}, max={salary_max}")
+
+        if salary_min is None and salary_max is not None:
+            salary_min = salary_max
+        elif salary_max is None and salary_min is not None:
+            salary_max = salary_min
+
+        logger.debug(f"Processed salary data: min={salary_min}, max={salary_max}")
+
         return JobListing(
             job_title=job.get("title", "N/A"),
             company_name=job.get("company", {}).get("display_name", "N/A"),
-            job_location=job.get("location", {}).get("display_name", "N/A"),
+            job_location=job_location,
             job_description=job.get("description", "N/A"),
-            salary_low=job.get("salary_min"),
-            salary_high=job.get("salary_max"),
+            salary_low=salary_min,
+            salary_high=salary_max,
             source="Adzuna"
         )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         return "experience" not in job["description"].lower() or f"{max_experience} years" in job["description"].lower()
+
 
 class USAJobsAPIClient(JobAPIClient):
     def __init__(self) -> None:
@@ -89,16 +110,17 @@ class USAJobsAPIClient(JobAPIClient):
             "Keyword": query,
             "LocationName": location,
             "ResultsPerPage": limit,
-            "Radius": distance,
         }
-        if remote:
-            params["RemoteIndicator"] = "Yes"
+        # Removing potentially problematic parameters
+        # if remote:
+        #     params["RemoteIndicator"] = "Yes"
 
         try:
             response = requests.get(self.base_url, headers=headers, params=params)
             response.raise_for_status()
             jobs_data = response.json()["SearchResult"]["SearchResultItems"]
 
+            logger.info(f"USA Jobs API returned {len(jobs_data)} jobs")
             return [
                 self._create_job_listing(job)
                 for job in jobs_data
@@ -107,7 +129,12 @@ class USAJobsAPIClient(JobAPIClient):
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
             logger.error(f"Response content: {response.text}")
-            logger.debug(f"USA Jobs API request details: URL: {response.url}, Headers: {headers}, Params: {params}")
+            logger.error(f"Request URL: {response.url}")
+            logger.error(f"Request headers: {headers}")
+            logger.error(f"Request parameters: {params}")
+            if response.status_code == 400:
+                logger.error("400 Bad Request: This could be due to invalid parameters or authentication issues.")
+                logger.error(f"Please check your USA_JOBS_API_KEY and USA_JOBS_EMAIL in the config file.")
             return []
         
     def _create_job_listing(self, job: dict) -> JobListing:
