@@ -15,6 +15,13 @@ class JobAPIClient(ABC):
     def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
         pass
 
+    def _filter_senior_titles(self, job_listings: list[JobListing]) -> list[JobListing]:
+        senior_title_indicators = ["senior", "sr", "lead", "2", "3", "4", "5", "ii", "iii", "iv", "manager", "expert", "director", "principal"]
+        return [
+            job for job in job_listings 
+            if not any(word in job.job_title.lower() for word in senior_title_indicators)
+        ]
+
 class AdzunaAPIClient(JobAPIClient):
     def __init__(self) -> None:
         self.app_id = config.ADZUNA_APP_ID
@@ -44,11 +51,16 @@ class AdzunaAPIClient(JobAPIClient):
             response.raise_for_status()
             jobs_data = response.json()["results"]
 
-            return [
+            job_listings = [
                 self._create_job_listing(job)
                 for job in jobs_data
                 if self._check_experience(job, max_experience)
             ]
+            
+            filtered_listings = self._filter_senior_titles(job_listings)
+            logger.info(f"Filtered out {len(job_listings) - len(filtered_listings)} senior job listings from Adzuna results")
+            
+            return filtered_listings
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             return []
@@ -61,7 +73,8 @@ class AdzunaAPIClient(JobAPIClient):
             job_description=job.get("description", "N/A"),
             salary_low=job.get("salary_min"),
             salary_high=job.get("salary_max"),
-            source="Adzuna"
+            source="Adzuna",
+            application_url=job.get("redirect_url", "N/A")
         )
         
     def _check_experience(self, job: dict[str, any], max_experience: int) -> bool:
@@ -123,15 +136,16 @@ class USAJobsAPIClient(JobAPIClient):
                 logger.warning("No SearchResult found in the USAJobs API response")
                 return []
 
-            processed_jobs = []
-            for job in jobs_data:
-                if self._check_experience(job, max_experience):
-                    processed_jobs.append(self._create_job_listing(job))
-                else:
-                    logger.debug(f"Job {job['MatchedObjectDescriptor'].get('PositionTitle', 'N/A')} filtered out due to experience requirement")
-
-            logger.debug(f"Number of jobs after experience filter: {len(processed_jobs)}")
-            return processed_jobs
+            job_listings = [
+                self._create_job_listing(job)
+                for job in jobs_data
+                if self._check_experience(job, max_experience)
+            ]
+            
+            filtered_listings = self._filter_senior_titles(job_listings)
+            logger.info(f"Filtered out {len(job_listings) - len(filtered_listings)} senior job listings from USAJobs results")
+            
+            return filtered_listings
 
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
@@ -147,7 +161,8 @@ class USAJobsAPIClient(JobAPIClient):
             job_description=job_data.get("QualificationSummary", "N/A"),
             salary_low=float(job_data["PositionRemuneration"][0]["MinimumRange"]) if job_data.get("PositionRemuneration") else None,
             salary_high=float(job_data["PositionRemuneration"][0]["MaximumRange"]) if job_data.get("PositionRemuneration") else None,
-            source="USA Jobs"
+            source="USA Jobs",
+            application_url=job_data.get("ApplyURI", ["N/A"])[0]
         )
         
     def _check_experience(self, job: dict[str, any], max_experience: int) -> bool:

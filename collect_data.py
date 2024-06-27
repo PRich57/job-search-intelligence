@@ -27,7 +27,19 @@ class JobDataCollector:
             return adzuna_jobs + usa_jobs
     
     def save_to_csv(self, jobs: list[JobListing], filename: str) -> None:
-        df = pd.DataFrame([job.__dict__ for job in jobs])
-        df["timestamp"] = datetime.now()
+        df = pd.DataFrame([
+            {
+                "job_title": job.job_title,
+                "company_name": job.company_name,
+                "job_location": job.job_location,
+                "job_description": job.job_description,
+                "salary_low": job.salary_low,
+                "salary_high": job.salary_high,
+                "source": job.source,
+                "application_url": job.application_url,
+                "timestamp": datetime.now()
+            }
+            for job in jobs
+        ])
         df.to_csv(filename, index=False)
         logger.info(f"Data saved to {filename}")

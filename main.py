@@ -11,22 +11,23 @@ import config
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-def search_jobs(collector: JobDataCollector, query: str, location: str = None, remote: bool = config.DEFAULT_REMOTE) -> list:
-    jobs = []
-    for source in ["adzuna", "usajobs"]:
-        logger.info(f"Fetching {'remote' if remote else 'local'} jobs from {source.capitalize()}...")
-        source_jobs = collector.collect_jobs(
-            query=query,
-            location=location,
-            remote=remote,
-            distance=config.DEFAULT_DISTANCE if location else None,
-            max_experience=config.DEFAULT_MAX_EXPERIENCE,
-            limit=config.DEFAULT_LIMIT,
-            source=source
-        )
-        logger.info(f"Found {len(source_jobs)} jobs from {source.capitalize()}")
-        jobs.extend(source_jobs)
-    return jobs
+def search_jobs(collector: JobDataCollector, job_titles: list[str], location: str = None, remote: bool = config.DEFAULT_REMOTE) -> list:
+    all_jobs = []
+    for job_title in job_titles:
+        for source in ["adzuna", "usajobs"]:
+            logger.info(f"Fetching {'remote' if remote else 'local'} {job_title} jobs from {source.capitalize()}...")
+            source_jobs = collector.collect_jobs(
+                query=job_title,
+                location=location,
+                remote=remote,
+                distance=config.DEFAULT_DISTANCE if location else None,
+                max_experience=config.DEFAULT_MAX_EXPERIENCE,
+                limit=config.DEFAULT_LIMIT,
+                source=source
+            )
+            logger.info(f"Found {len(source_jobs)} {job_title} jobs from {source.capitalize()}")
+            all_jobs.extend(source_jobs)
+    return all_jobs
 
 def main() -> None:
     adzuna_client = AdzunaAPIClient()
@@ -34,12 +35,14 @@ def main() -> None:
 
     collector = JobDataCollector(adzuna_client, usa_jobs_client)
 
+    job_titles = ["Software Developer", "Data Analyst", "Software Engineer", "Web Developer"]
+
     try:
         # Search for remote jobs
-        remote_jobs = search_jobs(collector, query="Software Developer", remote=True)
+        remote_jobs = search_jobs(collector, job_titles=job_titles, remote=True)
 
         # Search for local jobs in Denver, CO
-        denver_jobs = search_jobs(collector, query="Software Developer", location="Denver, CO", remote=False)
+        denver_jobs = search_jobs(collector, job_titles=job_titles, location="Denver, CO", remote=False)
 
         all_jobs = remote_jobs + denver_jobs
 
