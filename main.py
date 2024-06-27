@@ -4,6 +4,7 @@ from datetime import datetime
 from api_clients import AdzunaAPIClient, USAJobsAPIClient
 from collect_data import JobDataCollector
 from analyze_data import analyze_data
+from visualize_data import generate_visualizations
 import config
 
 # Set up logging
@@ -54,6 +55,10 @@ def main() -> None:
             logger.info("Data Analysis Results:")
             for key, value in analysis.items():
                 logger.info(f"{key}: {value}")
+
+            # Generate visualizations
+            generate_visualizations(all_jobs)
+
     except Exception as e:
         logger.error(f"An error occurred: {e}", exc_info=True)
 
