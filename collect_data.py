@@ -6,7 +6,7 @@ import pandas as pd
 
 from api_clients import AdzunaAPIClient, USAJobsAPIClient
 from job_listing import JobListing
-from config import DEFAULT_DISTANCE, DEFAULT_REMOTE, DEFAULT_MAX_EXPERIENCE, DEFAULT_LIMIT
+from config import DEFAULT_DISTANCE, DEFAULT_MAX_EXPERIENCE, DEFAULT_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,9 @@ class JobDataCollector:
         self.adzuna_client = adzuna_client
         self.usa_jobs_client = usa_jobs_client
 
-    def collect_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, remote: bool = DEFAULT_REMOTE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
-        adzuna_jobs = self.adzuna_client.fetch_jobs(query, location, distance, remote, max_experience, limit)
-        usa_jobs = self.usa_jobs_client.fetch_jobs(query, location, distance, remote, max_experience, limit)
+    def collect_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
+        adzuna_jobs = self.adzuna_client.fetch_jobs(query, location, distance, max_experience, limit)
+        usa_jobs = self.usa_jobs_client.fetch_jobs(query, location, distance, max_experience, limit)
         return adzuna_jobs + usa_jobs
     
     def save_to_csv(self, jobs: List[JobListing], filename: str) -> None:

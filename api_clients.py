@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class JobAPIClient(ABC):
     @abstractmethod
-    def fetch_jobs(self, query: str, location: str, distance: int, remote: bool, max_experience: int, limit: int) -> List[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int, max_experience: int, limit: int) -> List[JobListing]:
         pass
 
 class AdzunaAPIClient(JobAPIClient):
@@ -27,7 +27,7 @@ class AdzunaAPIClient(JobAPIClient):
 
     @sleep_and_retry
     @limits(calls=100, period=60)
-    def fetch_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, remote: bool = DEFAULT_REMOTE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
         params = {
             "app_id": self.app_id,
             "app_key": self.api_key,
@@ -38,8 +38,10 @@ class AdzunaAPIClient(JobAPIClient):
             "max_days_old": 30,
             "content-type": "application/json"
         }
-        if remote:
-            params["where"] = f"{location} AND remote"
+        # if remote:
+        #     params["what"] = f"{query} remote"
+
+        logger.info(f"Adzuna API request parameters: {params}")
 
         try:
             response = requests.get(self.base_url, params=params)
@@ -47,13 +49,17 @@ class AdzunaAPIClient(JobAPIClient):
             jobs_data = response.json()["results"]
 
             logger.info(f"Adzuna API returned {len(jobs_data)} jobs")
-            logger.debug(f"First job location: {jobs_data[0]['location']['display_name'] if jobs_data else 'N/A'}")
+            logger.debug(f"First job from Adzuna: {jobs_data[0] if jobs_data else 'No jobs returned'}")
 
-            return [
-                job_listing for job_listing in
-                (self._create_job_listing(job) for job in jobs_data)
-                if job_listing is not None and self._check_experience(job, max_experience)
-            ]
+            filtered_jobs = []
+            for job in jobs_data:
+                job_listing = self._create_job_listing(job)
+                if job_listing and self._check_experience(job, max_experience):
+                    filtered_jobs.append(job_listing)
+
+            logger.info(f"After filtering, {len(filtered_jobs)} jobs remain")
+            return filtered_jobs
+        
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             logger.error(f"Response content: {response.text}")
@@ -63,8 +69,10 @@ class AdzunaAPIClient(JobAPIClient):
         
     def _create_job_listing(self, job: dict) -> JobListing | None:
         job_location = job.get("location", {}).get("display_name", "").lower()
-        if "denver" not in job_location and "colorado" not in job_location:
-            return None
+        logger.debug(f"Processing job in location: {job_location}")
+
+        # if "denver" not in job_location and "colorado" not in job_location:
+        #     return None
 
         salary_min = job.get("salary_min")
         salary_max = job.get("salary_max")
@@ -89,7 +97,8 @@ class AdzunaAPIClient(JobAPIClient):
         )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
-        return "experience" not in job["description"].lower() or f"{max_experience} years" in job["description"].lower()
+        description = job.get("description", "").lower()
+        return "experience" not in description or f"{max_experience} years" in description
 
 
 class USAJobsAPIClient(JobAPIClient):
@@ -100,7 +109,7 @@ class USAJobsAPIClient(JobAPIClient):
 
     @sleep_and_retry
     @limits(calls=50, period=60)
-    def fetch_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, remote: bool = DEFAULT_REMOTE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
+    def fetch_jobs(self, query: str, location: str, distance: int = DEFAULT_DISTANCE, max_experience: int = DEFAULT_MAX_EXPERIENCE, limit: int = DEFAULT_LIMIT) -> List[JobListing]:
         headers = {
             "Authorization-Key": self.auth_key,
             "User-Agent": self.email,
@@ -110,10 +119,15 @@ class USAJobsAPIClient(JobAPIClient):
             "Keyword": query,
             "LocationName": location,
             "ResultsPerPage": limit,
+            "Radius": distance,
+            "Fields": "min",
+            "SortField": "Relevance",
+            "SortDirection": "Descending",
         }
-        # Removing potentially problematic parameters
         # if remote:
         #     params["RemoteIndicator"] = "Yes"
+
+        logger.info(f"USA Jobs API request parameters: {params}")
 
         try:
             response = requests.get(self.base_url, headers=headers, params=params)
@@ -121,6 +135,8 @@ class USAJobsAPIClient(JobAPIClient):
             jobs_data = response.json()["SearchResult"]["SearchResultItems"]
 
             logger.info(f"USA Jobs API returned {len(jobs_data)} jobs")
+            logger.debug(f"First job from USA Jobs: {jobs_data[0] if jobs_data else 'No jobs returned'}")
+
             return [
                 self._create_job_listing(job)
                 for job in jobs_data
@@ -132,9 +148,6 @@ class USAJobsAPIClient(JobAPIClient):
             logger.error(f"Request URL: {response.url}")
             logger.error(f"Request headers: {headers}")
             logger.error(f"Request parameters: {params}")
-            if response.status_code == 400:
-                logger.error("400 Bad Request: This could be due to invalid parameters or authentication issues.")
-                logger.error(f"Please check your USA_JOBS_API_KEY and USA_JOBS_EMAIL in the config file.")
             return []
         
     def _create_job_listing(self, job: dict) -> JobListing:
@@ -150,7 +163,7 @@ class USAJobsAPIClient(JobAPIClient):
         )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
-        qualifications = job["MatchedObjectDescriptor"]["QualificationSummary"].lower()
+        qualifications = job["MatchedObjectDescriptor"].get("QualificationSummary", "").lower()
         return "experience" not in qualifications or f"{max_experience} years" in qualifications
     
     # USA job codes: [(422, Data Analyst), (621, Software Developer)] - found on codelist/cyberworkroles - verify then add to filters
