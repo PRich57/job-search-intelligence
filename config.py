@@ -21,7 +21,7 @@ DEFAULT_MAX_EXPERIENCE = 5
 DEFAULT_LIMIT = 50
 
 # Logging configuration
-LOG_LEVEL = "INFO"
+LOG_LEVEL = "DEBUG"  # Changed to DEBUG for more detailed logging
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 
 # Output directory for CSV files
