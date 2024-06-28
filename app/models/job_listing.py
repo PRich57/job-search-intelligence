@@ -10,6 +10,8 @@ class JobListing:
     salary_high: float | None
     source: str
     application_url: str
+    job_category: str = "N/A"
+    job_category_code: str = "N/A"
 
     def __post_init__(self):
         if self.salary_low is not None and self.salary_high is not None:

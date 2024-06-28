@@ -5,8 +5,8 @@ from urllib.parse import quote, urlencode
 import requests
 from ratelimit import limits, sleep_and_retry
 
-from job_listing import JobListing
-import config
+from app.models.job_listing import JobListing
+from config import active_config as config
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +15,40 @@ class JobAPIClient(ABC):
     def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
         pass
 
-    def _filter_senior_titles(self, job_listings: list[JobListing]) -> list[JobListing]:
-        senior_title_indicators = ["senior", "sr", "lead", "2", "3", "4", "5", "ii", "iii", "iv", "manager", "expert", "director", "principal"]
-        return [
-            job for job in job_listings 
-            if not any(word in job.job_title.lower() for word in senior_title_indicators)
+    def filter_jobs(self, job_listings: list[JobListing]) -> list[JobListing]:
+        senior_title_indicators = [
+            "senior", "sr", "lead", "2", "3", "4", "5",
+            "ii", "iii", "iv", "manager", "expert", "director", "principal"
         ]
+        relevant_categories = {"2210", "0854", "1530", "1550", "N/A"}
+
+        filtered_jobs = []
+        for job in job_listings:
+            if job.job_category_code not in relevant_categories:
+                logger.debug(f"Filtered out job due to category code: {job.job_title} - {job.job_category_code}")
+                continue
+            
+            if any(word in job.job_title.lower() for word in senior_title_indicators):
+                logger.debug(f"Filtered out senior job: {job.job_title}")
+                continue
+            
+            filtered_jobs.append(job)
+        
+        logger.info(f"Filtered {len(job_listings) - len(filtered_jobs)} jobs")
+        logger.info(f"Remaining jobs: {len(filtered_jobs)}")
+        
+        return filtered_jobs
+
+    def analyze_category_codes(self, job_listings: list[JobListing]) -> None:
+        category_codes = {}
+        for job in job_listings:
+            if job.job_category_code not in category_codes:
+                category_codes[job.job_category_code] = 0
+            category_codes[job.job_category_code] += 1
+        
+        logger.info("Category code distribution:")
+        for code, count in sorted(category_codes.items(), key=lambda x: x[1], reverse=True):
+            logger.info(f"{code}: {count}")
 
 class AdzunaAPIClient(JobAPIClient):
     def __init__(self) -> None:
@@ -57,8 +85,8 @@ class AdzunaAPIClient(JobAPIClient):
                 if self._check_experience(job, max_experience)
             ]
             
-            filtered_listings = self._filter_senior_titles(job_listings)
-            logger.info(f"Filtered out {len(job_listings) - len(filtered_listings)} senior job listings from Adzuna results")
+            self.analyze_category_codes(job_listings)  # Add this line to see category distribution before filtering
+            filtered_listings = self.filter_jobs(job_listings)
             
             return filtered_listings
         except requests.RequestException as e:
@@ -116,37 +144,18 @@ class USAJobsAPIClient(JobAPIClient):
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            response_json = response.json()
-            
-            logger.debug(f"USAJobs API response status: {response.status_code}")
-            logger.debug(f"USAJobs API response headers: {response.headers}")
-            logger.debug(f"USAJobs API response JSON keys: {response_json.keys()}")
-            
-            if "SearchResult" in response_json:
-                search_result = response_json["SearchResult"]
-                logger.debug(f"USAJobs SearchResult keys: {search_result.keys()}")
-                
-                if "SearchResultItems" in search_result:
-                    jobs_data = search_result["SearchResultItems"]
-                    logger.debug(f"Number of jobs found: {len(jobs_data)}")
-                else:
-                    logger.warning("No SearchResultItems found in the USAJobs API response")
-                    return []
-            else:
-                logger.warning("No SearchResult found in the USAJobs API response")
-                return []
+            jobs_data = response.json()["SearchResult"]["SearchResultItems"]
 
             job_listings = [
                 self._create_job_listing(job)
                 for job in jobs_data
                 if self._check_experience(job, max_experience)
             ]
-            
-            filtered_listings = self._filter_senior_titles(job_listings)
-            logger.info(f"Filtered out {len(job_listings) - len(filtered_listings)} senior job listings from USAJobs results")
+
+            self.analyze_category_codes(job_listings)  # Add this line to see category distribution before filtering
+            filtered_listings = self.filter_jobs(job_listings)
             
             return filtered_listings
-
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
             logger.debug(f"USA Jobs API response: {response.text}")
@@ -154,6 +163,10 @@ class USAJobsAPIClient(JobAPIClient):
         
     def _create_job_listing(self, job: dict[str, any]) -> JobListing:
         job_data = job["MatchedObjectDescriptor"]
+        job_categories = job_data.get("JobCategory", [])
+        job_category = job_categories[0]["Name"] if job_categories else "N/A"
+        job_category_code = job_categories[0]["Code"] if job_categories else "N/A"
+        
         return JobListing(
             job_title=job_data.get("PositionTitle", "N/A"),
             company_name=job_data.get("OrganizationName", "N/A"),
@@ -162,7 +175,9 @@ class USAJobsAPIClient(JobAPIClient):
             salary_low=float(job_data["PositionRemuneration"][0]["MinimumRange"]) if job_data.get("PositionRemuneration") else None,
             salary_high=float(job_data["PositionRemuneration"][0]["MaximumRange"]) if job_data.get("PositionRemuneration") else None,
             source="USA Jobs",
-            application_url=job_data.get("ApplyURI", ["N/A"])[0]
+            application_url=job_data.get("ApplyURI", ["N/A"])[0],
+            job_category=job_category,
+            job_category_code=job_category_code
         )
         
     def _check_experience(self, job: dict[str, any], max_experience: int) -> bool:
