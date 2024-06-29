@@ -62,6 +62,7 @@ h1 {
   border: 1px solid #888;
   width: 80%;
   max-width: 800px;
+  border-radius: .5rem;
 }
 
 .close {

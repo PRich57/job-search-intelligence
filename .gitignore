@@ -163,4 +163,4 @@ cython_debug/
 
 
 # Personalized responses
-job-listings/
+job-listings/*
