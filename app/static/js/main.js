@@ -1,5 +1,3 @@
-// Main JavaScript file for Job Listings Viewer
-
 document.addEventListener("DOMContentLoaded", function() {
     let table;
     let selectedTitles = [];
