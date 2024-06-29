@@ -5,7 +5,7 @@ from config import active_config as Config
 from app.utils import format_salary_range
 
 # Create the Flask application with the correct template folder
-app = Flask(__name__, template_folder='app/templates')
+app = Flask(__name__, static_folder='app/static', template_folder='app/templates')
 
 def load_latest_csv():
     csv_files = [f for f in os.listdir(Config.OUTPUT_DIR) if f.endswith('.csv')]
