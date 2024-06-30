@@ -12,7 +12,7 @@ Job Search Intelligence is a Python-based tool designed to collect, analyze, and
 ## Installation
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/job-search-intelligence.git
+   git clone https://github.com/PRich57/job-search-intelligence.git
    cd job-search-intelligence
    ```
 
