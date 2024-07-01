@@ -40,9 +40,8 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # Flask configuration
-    DEBUG = True  # Set to False in production
+    DEBUG = os.getenv("FLASK_DEBUG", "False").lower() in ("true", "1", "t")
     SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")  # Change this in production
-    
 
     # Visualization settings
     CHART_STYLE = "darkgrid"

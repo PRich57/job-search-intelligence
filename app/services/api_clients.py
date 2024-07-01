@@ -22,17 +22,11 @@ class JobAPIClient(ABC):
         ]
         relevant_categories = {"2210", "0854", "1530", "1550", "N/A"}
 
-        filtered_jobs = []
-        for job in job_listings:
-            if job.job_category_code not in relevant_categories:
-                logger.debug(f"Filtered out job due to category code: {job.job_title} - {job.job_category_code}")
-                continue
-            
-            if any(word in job.job_title.lower() for word in senior_title_indicators):
-                logger.debug(f"Filtered out senior job: {job.job_title}")
-                continue
-            
-            filtered_jobs.append(job)
+        filtered_jobs = [
+            job for job in job_listings
+            if job.job_category_code in relevant_categories
+            and not any(word in job.job_title.lower() for word in senior_title_indicators)
+        ]
         
         logger.info(f"Filtered {len(job_listings) - len(filtered_jobs)} jobs")
         logger.info(f"Remaining jobs: {len(filtered_jobs)}")
@@ -42,9 +36,7 @@ class JobAPIClient(ABC):
     def analyze_category_codes(self, job_listings: list[JobListing]) -> None:
         category_codes = {}
         for job in job_listings:
-            if job.job_category_code not in category_codes:
-                category_codes[job.job_category_code] = 0
-            category_codes[job.job_category_code] += 1
+            category_codes[job.job_category_code] = category_codes.get(job.job_category_code, 0) + 1
         
         logger.info("Category code distribution:")
         for code, count in sorted(category_codes.items(), key=lambda x: x[1], reverse=True):
@@ -85,15 +77,18 @@ class AdzunaAPIClient(JobAPIClient):
                 if self._check_experience(job, max_experience)
             ]
             
-            self.analyze_category_codes(job_listings)  # Add this line to see category distribution before filtering
+            self.analyze_category_codes(job_listings)
             filtered_listings = self.filter_jobs(job_listings)
             
             return filtered_listings
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from Adzuna: {e}")
             return []
+        except Exception as e:
+            logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
+            return []
         
-    def _create_job_listing(self, job: dict[str, any]) -> JobListing:
+    def _create_job_listing(self, job: dict) -> JobListing:
         return JobListing(
             job_title=job.get("title", "N/A"),
             company_name=job.get("company", {}).get("display_name", "N/A"),
@@ -105,7 +100,7 @@ class AdzunaAPIClient(JobAPIClient):
             application_url=job.get("redirect_url", "N/A")
         )
         
-    def _check_experience(self, job: dict[str, any], max_experience: int) -> bool:
+    def _check_experience(self, job: dict, max_experience: int) -> bool:
         return "experience" not in job["description"].lower() or f"{max_experience} years" in job["description"].lower()
 
 class USAJobsAPIClient(JobAPIClient):
@@ -152,16 +147,19 @@ class USAJobsAPIClient(JobAPIClient):
                 if self._check_experience(job, max_experience)
             ]
 
-            self.analyze_category_codes(job_listings)  # Add this line to see category distribution before filtering
+            self.analyze_category_codes(job_listings)
             filtered_listings = self.filter_jobs(job_listings)
             
             return filtered_listings
         except requests.RequestException as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
-            logger.debug(f"USA Jobs API response: {response.text}")
+            logger.debug(f"USA Jobs API response: {response.text if 'response' in locals() else 'No response'}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
             return []
         
-    def _create_job_listing(self, job: dict[str, any]) -> JobListing:
+    def _create_job_listing(self, job: dict) -> JobListing:
         job_data = job["MatchedObjectDescriptor"]
         job_categories = job_data.get("JobCategory", [])
         job_category = job_categories[0]["Name"] if job_categories else "N/A"
@@ -180,10 +178,10 @@ class USAJobsAPIClient(JobAPIClient):
             job_category_code=job_category_code
         )
         
-    def _check_experience(self, job: dict[str, any], max_experience: int) -> bool:
+    def _check_experience(self, job: dict, max_experience: int) -> bool:
         qualifications = job["MatchedObjectDescriptor"].get("QualificationSummary", "").lower()
         logger.debug(f"Checking experience for job: {job['MatchedObjectDescriptor'].get('PositionTitle', 'N/A')}")
-        logger.debug(f"Qualifications: {qualifications[:100]}...")  # Log first 100 characters of qualifications
+        logger.debug(f"Qualifications: {qualifications[:100]}...")
         
         if "experience" not in qualifications:
             logger.debug("No experience mentioned, including job")
