@@ -1,7 +1,8 @@
 import os
+
 import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
+import seaborn as sns
 
 from app.models.job_listing import JobListing
 from config import active_config as Config
