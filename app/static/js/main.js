@@ -31,42 +31,43 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    // Load job titles and populate filter
+    // Load job titles and populate dropdown
     function loadJobTitles() {
         fetch("/api/job_titles")
             .then(response => response.json())
             .then(data => {
-                const filterContainer = document.getElementById("titleFilter");
-                data.titles.forEach(title => {
-                    const checkbox = document.createElement("input");
-                    checkbox.type = "checkbox";
-                    checkbox.id = `title-${title}`;
-                    checkbox.value = title;
-                    checkbox.addEventListener("change", handleTitleFilterChange);
+                const selectElement = document.getElementById("titleFilter");
+                if (selectElement) {
+                    data.titles.forEach(title => {
+                        const option = document.createElement("option");
+                        option.value = title;
+                        option.textContent = title;
+                        selectElement.appendChild(option);
+                    });
+                    
+                    // Initialize Select2
+                    $(selectElement).select2({
+                        placeholder: "Select job titles",
+                        allowClear: true
+                    });
 
-                    const label = document.createElement("label");
-                    label.htmlFor = `title-${title}`;
-                    label.textContent = title;
-
-                    filterContainer.appendChild(checkbox);
-                    filterContainer.appendChild(label);
-                    filterContainer.appendChild(document.createElement("br"));
-                });
+                    // Add event listener for changes
+                    $(selectElement).on('change', handleTitleFilterChange);
+                } else {
+                    console.error("Title filter select element not found");
+                }
+            })
+            .catch(error => {
+                console.error("Error loading job titles:", error);
             });
     }
 
     // Handle title filter changes
-    function handleTitleFilterChange(event) {
-        const title = event.target.value;
-        if (event.target.checked) {
-            selectedTitles.push(title);
-        } else {
-            const index = selectedTitles.indexOf(title);
-            if (index > -1) {
-                selectedTitles.splice(index, 1);
-            }
+    function handleTitleFilterChange(e) {
+        selectedTitles = $(e.target).val() || [];
+        if (table) {
+            table.ajax.reload();
         }
-        table.ajax.reload();
     }
 
     // Initialize modal functionality
@@ -74,27 +75,31 @@ document.addEventListener("DOMContentLoaded", function() {
         const modal = document.getElementById("jobModal");
         const closeBtn = document.getElementsByClassName("close")[0];
 
-        $("#jobTable tbody").on("click", "tr", function() {
-            const data = table.row(this).data();
-            $("#modalJobTitle").text(data.job_title);
-            $("#modalCompany").text(data.company_name);
-            $("#modalLocation").text(data.job_location);
-            $("#modalSource").text(data.source);
-            $("#modalSalary").text(data.salary_range);
-            $("#modalApplyLink").attr("href", data.application_url);
-            $("#modalDescription").text(data.job_description);
-            modal.style.display = "block";
-        });
+        if (modal && closeBtn) {
+            $("#jobTable tbody").on("click", "tr", function() {
+                const data = table.row(this).data();
+                $("#modalJobTitle").text(data.job_title);
+                $("#modalCompany").text(data.company_name);
+                $("#modalLocation").text(data.job_location);
+                $("#modalSource").text(data.source);
+                $("#modalSalary").text(data.salary_range);
+                $("#modalApplyLink").attr("href", data.application_url);
+                $("#modalDescription").text(data.job_description);
+                modal.style.display = "block";
+            });
 
-        closeBtn.onclick = function() {
-            modal.style.display = "none";
-        };
-
-        window.onclick = function(event) {
-            if (event.target == modal) {
+            closeBtn.onclick = function() {
                 modal.style.display = "none";
-            }
-        };
+            };
+
+            window.onclick = function(event) {
+                if (event.target == modal) {
+                    modal.style.display = "none";
+                }
+            };
+        } else {
+            console.error("Modal or close button not found");
+        }
     }
 
     // Initialize the application

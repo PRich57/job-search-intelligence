@@ -1,8 +1,11 @@
 from flask import Flask, render_template, jsonify, request
 import pandas as pd
 import os
+import json
 from config import active_config as Config
 from app.utils import format_salary_range
+from app.services.data_collection import JobDataCollector
+from app.services.api_clients import AdzunaAPIClient, USAJobsAPIClient
 
 # Create the Flask application with the correct template folder
 app = Flask(__name__, static_folder='app/static', template_folder='app/templates')
@@ -27,6 +30,13 @@ def get_jobs():
     if df is None:
         print("No data loaded.")
         return jsonify({"data": []})
+    
+    # Get filters from request
+    title_filters = request.args.getlist("titles[]")
+
+    # Apply title filters if any
+    if title_filters:
+        df = df[df['job_title'].isin(title_filters)]
     
     # Limit the number of records
     df = df.head(1000)  # Limit to 1000 records
@@ -79,6 +89,23 @@ def get_category_stats():
     stats = df['job_category'].value_counts().reset_index()
     stats.columns = ['category', 'count']
     return jsonify({"stats": stats.to_dict('records')})
+
+@app.route('/api/fetch_all_jobs')
+def fetch_sample_jobs():
+    Config.ADZUNA_CLIENT = AdzunaAPIClient()
+    Config.USA_JOBS_CLIENT = USAJobsAPIClient()
+    collector = JobDataCollector(Config.ADZUNA_CLIENT, Config.USA_JOBS_CLIENT)
+
+    all_jobs = collector.search_jobs()
+
+    adzuna_response = Config.ADZUNA_CLIENT.last_response if hasattr(Config.ADZUNA_CLIENT, 'last_response') else {}
+    usa_jobs_response = Config.USA_JOBS_CLIENT.last_response if hasattr(Config.USA_JOBS_CLIENT, 'last_respone') else {}
+
+    return jsonify({
+        "adzuna": adzuna_response,
+        "usa_jobs": usa_jobs_response,
+        "job_count": len(all_jobs)
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)

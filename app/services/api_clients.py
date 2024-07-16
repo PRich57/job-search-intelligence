@@ -1,4 +1,5 @@
 import logging
+import json
 from abc import ABC, abstractmethod
 from urllib.parse import quote, urlencode
 
@@ -47,6 +48,7 @@ class AdzunaAPIClient(JobAPIClient):
         self.app_id = config.ADZUNA_APP_ID
         self.api_key = config.ADZUNA_API_KEY
         self.base_url = config.ADZUNA_BASE_URL
+        self.last_response = {}
 
     @sleep_and_retry
     @limits(calls=100, period=60)
@@ -70,6 +72,8 @@ class AdzunaAPIClient(JobAPIClient):
             response = requests.get(self.base_url, params=params)
             response.raise_for_status()
             jobs_data = response.json()["results"]
+
+            self.last_response = jobs_data
 
             job_listings = [
                 self._create_job_listing(job)
@@ -108,6 +112,7 @@ class USAJobsAPIClient(JobAPIClient):
         self.auth_key = config.USA_JOBS_API_KEY
         self.email = config.USA_JOBS_EMAIL
         self.base_url = config.USA_JOBS_BASE_URL
+        self.last_response = {}
 
     @sleep_and_retry
     @limits(calls=50, period=60)
@@ -140,6 +145,8 @@ class USAJobsAPIClient(JobAPIClient):
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             jobs_data = response.json()["SearchResult"]["SearchResultItems"]
+
+            self.last_response = jobs_data
 
             job_listings = [
                 self._create_job_listing(job)

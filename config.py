@@ -25,12 +25,14 @@ class Config:
     DEFAULT_DISTANCE = 25  # in miles
     DEFAULT_MAX_EXPERIENCE = 5  # in years
     DEFAULT_LIMIT = 100  # number of job listings to fetch per request
-    JOB_TITLES = [
+    
+    # Default job titles and locations (can be overridden by user input)
+    DEFAULT_JOB_TITLES = [
         "Software Developer",
-        "Data Analyst",
         "Software Engineer",
-        "Web Developer"
+        "Data Analyst"
     ]
+    DEFAULT_LOCATIONS = ["Denver", "Remote"]
 
     # Output directory for data and visualizations
     OUTPUT_DIR = "job-listings"
@@ -40,7 +42,7 @@ class Config:
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     # Flask configuration
-    DEBUG = os.getenv("FLASK_DEBUG", "False").lower() in ("true", "1", "t")
+    DEBUG = True  # Set to False in production
     SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")  # Change this in production
 
     # Visualization settings

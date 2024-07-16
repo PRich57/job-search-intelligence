@@ -6,11 +6,21 @@
     <title>Job Listings Viewer</title>
     <link rel="stylesheet" href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/1.7.0/css/buttons.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
 <body>
     <h1>Job Listings Viewer</h1>
     <div id="error-message" style="color: red;"></div>
+    <div id="fetchButton">
+        <h4>See JSON Objects in Console:</h4>
+        <button id="fetchAllJobs">Fetch Jobs</button>
+    </div>
+    <div id="titleFilterContainer">
+        <label for="titleFilter">Filter by Job Title:</label>
+        <select id="titleFilter" multiple="multiple" style="width: 100%;">
+        </select>
+    </div>
     <table id="jobTable" class="display" style="width:100%">
         <thead>
             <tr>
@@ -45,7 +55,22 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
     <script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.html5.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.print.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('fetchAllJobs').addEventListener('click', function() {
+                fetch('/api/fetch_all_jobs')
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Adzuna API Response:', data.adzuna);
+                        console.log('USA Jobs API Response:', data.usa_jobs);
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+            });
+        });
+    </script>
 </body>
 </html>

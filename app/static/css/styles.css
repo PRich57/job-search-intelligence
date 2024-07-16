@@ -77,6 +77,16 @@ h1 {
   cursor: pointer;
 }
 
+#fetchButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#fetchButton h4 {
+  margin-bottom: 0px;
+}
+
 #titleFilter {
   margin-bottom: 20px;
   padding: 10px;
@@ -87,6 +97,10 @@ h1 {
 #titleFilter label {
   margin-right: 10px;
   cursor: pointer;
+}
+
+#titleFilterContainer {
+  margin: 20px;
 }
 
 .dataTables_wrapper .dataTables_filter,

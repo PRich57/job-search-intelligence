@@ -11,20 +11,23 @@ from app.services.api_clients import AdzunaAPIClient, USAJobsAPIClient
 logging.basicConfig(level=Config.LOG_LEVEL, format=Config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-def main() -> None:
+def get_user_input(prompt, default_values):
+    user_input = input(f"{prompt} (default: {', '.join(default_values)}): ").strip()
+    if user_input:
+        return [item.strip() for item in user_input.split(',')]
+    return default_values
+
+def main():
     Config.ADZUNA_CLIENT = AdzunaAPIClient()
     Config.USA_JOBS_CLIENT = USAJobsAPIClient()
 
     collector = JobDataCollector(Config.ADZUNA_CLIENT, Config.USA_JOBS_CLIENT)
 
+    job_titles = get_user_input("Enter job titles (comma-separated)", Config.DEFAULT_JOB_TITLES)
+    locations = get_user_input("Enter locations (comma-separated)", Config.DEFAULT_LOCATIONS)
+
     try:
-        # Search for remote jobs
-        remote_jobs = collector.search_jobs(remote=True)
-
-        # Search for local jobs in Denver, CO
-        denver_jobs = collector.search_jobs(location="Denver, CO", remote=False)
-
-        all_jobs = remote_jobs + denver_jobs
+        all_jobs = collector.search_jobs(job_titles, locations)
 
         if not all_jobs:
             logger.warning("No jobs were found. Check your search criteria and API keys.")
