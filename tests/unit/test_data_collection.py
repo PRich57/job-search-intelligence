@@ -22,7 +22,7 @@ class TestJobDataCollector(unittest.TestCase):
 
         jobs = self.collector.search_jobs()
 
-        self.assertEqual(len(jobs), 8)  # 2 jobs * 4 job titles
+        self.assertEqual(len(jobs), 12)  # 3 jobs * 4 job titles
         self.assertEqual(jobs[0].job_title, "Software Developer")
         self.assertEqual(jobs[1].job_title, "Data Analyst")
 
