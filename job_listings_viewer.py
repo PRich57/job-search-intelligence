@@ -91,7 +91,7 @@ def get_category_stats():
     return jsonify({"stats": stats.to_dict('records')})
 
 @app.route('/api/fetch_all_jobs')
-def fetch_sample_jobs():
+def fetch_all_jobs():
     Config.ADZUNA_CLIENT = AdzunaAPIClient()
     Config.USA_JOBS_CLIENT = USAJobsAPIClient()
     collector = JobDataCollector(Config.ADZUNA_CLIENT, Config.USA_JOBS_CLIENT)
