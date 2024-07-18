@@ -1,5 +1,4 @@
 import logging
-import json
 from abc import ABC, abstractmethod
 from urllib.parse import quote, urlencode
 
@@ -144,13 +143,13 @@ class USAJobsAPIClient(JobAPIClient):
         try:
             response = requests.get(url, headers=headers)
             response.raise_for_status()
-            jobs_data = response.json()["SearchResult"]["SearchResultItems"]
+            jobs_data = response.json()
 
             self.last_response = jobs_data
 
             job_listings = [
                 self._create_job_listing(job)
-                for job in jobs_data
+                for job in jobs_data.get("SearchResult", {}).get("SearchResultItems", [])
                 if self._check_experience(job, max_experience)
             ]
 
@@ -164,6 +163,7 @@ class USAJobsAPIClient(JobAPIClient):
             return []
         except Exception as e:
             logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
+            self.last_response = {"error": str(e)}
             return []
         
     def _create_job_listing(self, job: dict) -> JobListing:

@@ -77,13 +77,13 @@ h1 {
   cursor: pointer;
 }
 
-#fetchButton {
+#fetchButtonContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-#fetchButton h4 {
+#fetchButtonContainer h4 {
   margin-bottom: 0px;
 }
 

@@ -98,8 +98,8 @@ def fetch_all_jobs():
 
     all_jobs = collector.search_jobs()
 
-    adzuna_response = Config.ADZUNA_CLIENT.last_response if hasattr(Config.ADZUNA_CLIENT, 'last_response') else {}
-    usa_jobs_response = Config.USA_JOBS_CLIENT.last_response if hasattr(Config.USA_JOBS_CLIENT, 'last_respone') else {}
+    adzuna_response = Config.ADZUNA_CLIENT.last_response # if hasattr(Config.ADZUNA_CLIENT, 'last_response') else {}
+    usa_jobs_response = Config.USA_JOBS_CLIENT.last_response # if hasattr(Config.USA_JOBS_CLIENT, 'last_respone') else {}
 
     return jsonify({
         "adzuna": adzuna_response,

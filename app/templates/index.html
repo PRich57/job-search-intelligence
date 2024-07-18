@@ -12,9 +12,9 @@
 <body>
     <h1>Job Listings Viewer</h1>
     <div id="error-message" style="color: red;"></div>
-    <div id="fetchButton">
-        <h4>See JSON Objects in Console:</h4>
-        <button id="fetchAllJobs">Fetch Jobs</button>
+    <div id="fetchButtonContainer">
+        <h4>See Responses in Console:</h4>
+        <button id="fetchButton">Fetch Jobs</button>
     </div>
     <div id="titleFilterContainer">
         <label for="titleFilter">Filter by Job Title:</label>
@@ -57,20 +57,5 @@
     <script src="https://cdn.datatables.net/buttons/1.7.0/js/buttons.print.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('fetchAllJobs').addEventListener('click', function() {
-                fetch('/api/fetch_all_jobs')
-                    .then(response => response.json())
-                    .then(data => {
-                        console.log('Adzuna API Response:', data.adzuna);
-                        console.log('USA Jobs API Response:', data.usa_jobs);
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
-            });
-        });
-    </script>
 </body>
 </html>

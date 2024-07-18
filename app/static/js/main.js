@@ -102,11 +102,31 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    function setupFetchButton() {
+        const fetchButton = document.getElementById("fetchButton")
+        if (fetchButton) {
+            fetchButton.addEventListener("click", function() {
+                console.log("Fetching all jobs...")
+                fetch("/api/fetch_all_jobs")
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log("Adzuna response:", data.adzuna);
+                        console.log("USA Jobs response:", data.usa_jobs);
+                        console.log("Total jobs fetched:", data.job_count);
+                    })
+                    .catch(error => {
+                        console.error("Error fetching jobs:", error);
+                    });
+            });
+        }
+    }
+
     // Initialize the application
     function initialize() {
         initializeDataTable();
         loadJobTitles();
         initializeModal();
+        setupFetchButton();
     }
 
     initialize();
