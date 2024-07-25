@@ -2,6 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from urllib.parse import quote, urlencode
 
+import aiohttp
 import requests
 from ratelimit import limits, sleep_and_retry
 
@@ -13,6 +14,10 @@ logger = logging.getLogger(__name__)
 class JobAPIClient(ABC):
     @abstractmethod
     def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
+        pass
+
+    @abstractmethod
+    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
         pass
 
     def filter_jobs(self, job_listings: list[JobListing]) -> list[JobListing]:
@@ -90,7 +95,31 @@ class AdzunaAPIClient(JobAPIClient):
         except Exception as e:
             logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
             return []
+
+    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
+        params = {
+            "app_id": self.app_id,
+            "app_key": self.api_key,
+            "results_per_page": config.DEFAULT_LIMIT,
+            "what": query,
+            "where": location,
+            "content-type": "application/json"
+        }
         
+        try:
+            async with session.get(self.base_url, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+                jobs_data = data.get("results", [])
+                job_listings = [self._create_job_listing(job) for job in jobs_data]
+                return self.filter_jobs(job_listings)
+        except aiohttp.ClientError as e:
+            logger.error(f"Error fetching jobs from Adzuna: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
+            return []
+
     def _create_job_listing(self, job: dict) -> JobListing:
         return JobListing(
             job_title=job.get("title", "N/A"),
@@ -165,7 +194,33 @@ class USAJobsAPIClient(JobAPIClient):
             logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
             self.last_response = {"error": str(e)}
             return []
+
+    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
+        headers = {
+            "Authorization-Key": self.auth_key,
+            "User-Agent": self.email,
+            "Host": "data.usajobs.gov"
+        }
+        params = {
+            "PositionTitle": query,
+            "LocationName": location,
+            "ResultsPerPage": config.DEFAULT_LIMIT,
+        }
         
+        try:
+            async with session.get(self.base_url, headers=headers, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+                jobs_data = data.get("SearchResult", {}).get("SearchResultItems", [])
+                job_listings = [self._create_job_listing(job) for job in jobs_data]
+                return self.filter_jobs(job_listings)
+        except aiohttp.ClientError as e:
+            logger.error(f"Error fetching jobs from USA Jobs: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
+            return []
+
     def _create_job_listing(self, job: dict) -> JobListing:
         job_data = job["MatchedObjectDescriptor"]
         job_categories = job_data.get("JobCategory", [])

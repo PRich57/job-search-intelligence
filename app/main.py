@@ -1,10 +1,10 @@
 import logging
 from datetime import datetime
+import asyncio
 
 from app.services.data_collection import JobDataCollector
 from app.services.data_analysis import analyze_data
 from app.services.data_visualization import generate_visualizations
-from app.api.routes import create_api_routes
 from config import Config
 from app.services.api_clients import AdzunaAPIClient, USAJobsAPIClient
 
@@ -17,7 +17,7 @@ def get_user_input(prompt, default_values):
         return [item.strip() for item in user_input.split(',')]
     return default_values
 
-def main():
+async def async_main():
     Config.ADZUNA_CLIENT = AdzunaAPIClient()
     Config.USA_JOBS_CLIENT = USAJobsAPIClient()
 
@@ -27,7 +27,7 @@ def main():
     locations = get_user_input("Enter locations (comma-separated)", Config.DEFAULT_LOCATIONS)
 
     try:
-        all_jobs = collector.search_jobs(job_titles, locations)
+        all_jobs = await collector.async_search_jobs(job_titles, locations)
 
         if not all_jobs:
             logger.warning("No jobs were found. Check your search criteria and API keys.")
@@ -46,6 +46,9 @@ def main():
 
     except Exception as e:
         logger.error(f"An error occurred: {e}", exc_info=True)
+
+def main():
+    asyncio.run(async_main())
 
 if __name__ == "__main__":
     main()
