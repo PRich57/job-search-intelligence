@@ -49,6 +49,7 @@ class AdzunaAPIClient(JobAPIClient):
         self.api_key = Config.ADZUNA_API_KEY
         self.base_url = Config.ADZUNA_BASE_URL
         self.semaphore = asyncio.Semaphore(2)  # Reduced to 2 concurrent requests
+        self.last_response = {}
 
     async def async_fetch_jobs_batch(self, session, queries: list[dict]) -> list[JobListing]:
         all_jobs = []
@@ -67,7 +68,6 @@ class AdzunaAPIClient(JobAPIClient):
         logger.info(f"Total Adzuna jobs after filtering: {len(filtered_jobs)}")
         return filtered_jobs
 
-    @lru_cache(maxsize=32)
     async def _fetch_single_query_with_retry(self, session, query_json, max_retries=3):
         query = json.loads(query_json)
         for attempt in range(max_retries):
@@ -94,15 +94,16 @@ class AdzunaAPIClient(JobAPIClient):
             "app_key": self.api_key,
             "results_per_page": query.get('limit', 100),
             "what": query['query'],
-            "where": query['location'] if not query.get('remote') else "remote",
+            "where": query['location'] if query.get('location') else "remote",
             "content-type": "application/json"
         }
-        if query.get('distance'):
+        if query.get('distance') is not None:
             params["distance"] = query['distance']
 
-        async with session.get(self.base_url, params=params) as response:
+        async with session.get(self.base_url, params={k: v for k, v in params.items() if v is not None}) as response:
             response.raise_for_status()
             data = await response.json()
+            self.last_response = data  # Store the last response
             jobs_data = data.get("results", [])
             logger.info(f"Adzuna query for {params['what']} in {params['where']} returned {len(jobs_data)} jobs")
             job_listings = [
@@ -126,7 +127,7 @@ class AdzunaAPIClient(JobAPIClient):
             job_category="N/A",
             job_category_code="N/A"
         )
-        
+
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         return "experience" not in job["description"].lower() or f"{max_experience} years" in job["description"].lower()
 
@@ -135,6 +136,7 @@ class USAJobsAPIClient(JobAPIClient):
         self.auth_key = Config.USA_JOBS_API_KEY
         self.email = Config.USA_JOBS_EMAIL
         self.base_url = Config.USA_JOBS_BASE_URL
+        self.last_response = {}
 
     async def async_fetch_jobs_batch(self, session, queries: list[dict]) -> list[JobListing]:
         all_jobs = []
@@ -165,13 +167,17 @@ class USAJobsAPIClient(JobAPIClient):
         for job_listings in results:
             all_jobs.extend(job_listings)
 
-        return self.filter_jobs(all_jobs)
+        logger.info(f"Total USA Jobs before filtering: {len(all_jobs)}")
+        filtered_jobs = self.filter_jobs(all_jobs)
+        logger.info(f"Total USA Jobs after filtering: {len(filtered_jobs)}")
+        return filtered_jobs
 
     async def _fetch_single_query(self, session, headers, params, max_experience):
         try:
-            async with session.get(self.base_url, headers=headers, params=params) as response:
+            async with session.get(self.base_url, headers=headers, params={k: v for k, v in params.items() if v is not None}) as response:
                 response.raise_for_status()
                 data = await response.json()
+                self.last_response = data  # Store the last response
                 jobs_data = data.get("SearchResult", {}).get("SearchResultItems", [])
                 return [
                     self._create_job_listing(job)
@@ -189,7 +195,7 @@ class USAJobsAPIClient(JobAPIClient):
         job_categories = job_data.get("JobCategory", [])
         job_category = job_categories[0]["Name"] if job_categories else "N/A"
         job_category_code = job_categories[0]["Code"] if job_categories else "N/A"
-        
+
         return JobListing(
             job_title=job_data.get("PositionTitle", "N/A"),
             company_name=job_data.get("OrganizationName", "N/A"),
@@ -202,7 +208,7 @@ class USAJobsAPIClient(JobAPIClient):
             job_category=job_category,
             job_category_code=job_category_code
         )
-        
+
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         qualifications = job["MatchedObjectDescriptor"].get("QualificationSummary", "").lower()
         if "experience" not in qualifications:

@@ -1,16 +1,18 @@
-from flask import Flask, render_template, jsonify, request
-import pandas as pd
 import os
-import json
-from config import active_config as Config
+from datetime import datetime
+
+import pandas as pd
+from quart import Quart, render_template, jsonify, request
+
 from app.utils import format_salary_range
 from app.services.data_collection import JobDataCollector
 from app.services.api_clients import AdzunaAPIClient, USAJobsAPIClient
+from config import active_config as Config
 
-# Create the Flask application with the correct template folder
-app = Flask(__name__, static_folder='app/static', template_folder='app/templates')
+# Create the Quart application with the correct template folder
+app = Quart(__name__, static_folder='app/static', template_folder='app/templates')
 
-def load_latest_csv():
+def load_latest_csv() -> pd.DataFrame | None:
     csv_files = [f for f in os.listdir(Config.OUTPUT_DIR) if f.endswith('.csv')]
     if not csv_files:
         print("No CSV files found in the directory.")
@@ -21,11 +23,11 @@ def load_latest_csv():
     return pd.read_csv(file_path)
 
 @app.route('/')
-def index():
-    return render_template('index.html')
+async def index() -> str:
+    return await render_template('index.html')
 
 @app.route('/api/jobs')
-def get_jobs():
+async def get_jobs() -> dict:
     df = load_latest_csv()
     if df is None:
         print("No data loaded.")
@@ -60,7 +62,7 @@ def get_jobs():
     return jsonify({"data": data})
 
 @app.route('/api/job_titles')
-def get_job_titles():
+async def get_job_titles() -> dict:
     df = load_latest_csv()
     if df is None:
         print("No data loaded.")
@@ -70,7 +72,7 @@ def get_job_titles():
     return jsonify({"titles": titles})
 
 @app.route('/api/job_categories')
-def get_job_categories():
+async def get_job_categories() -> dict:
     df = load_latest_csv()
     if df is None:
         print("No data loaded.")
@@ -80,7 +82,7 @@ def get_job_categories():
     return jsonify({"categories": categories})
 
 @app.route('/api/category_stats')
-def get_category_stats():
+async def get_category_stats() -> dict:
     df = load_latest_csv()
     if df is None:
         print("No data loaded.")
@@ -91,15 +93,15 @@ def get_category_stats():
     return jsonify({"stats": stats.to_dict('records')})
 
 @app.route('/api/fetch_all_jobs')
-def fetch_all_jobs():
+async def fetch_all_jobs() -> dict:
     Config.ADZUNA_CLIENT = AdzunaAPIClient()
     Config.USA_JOBS_CLIENT = USAJobsAPIClient()
     collector = JobDataCollector(Config.ADZUNA_CLIENT, Config.USA_JOBS_CLIENT)
 
-    all_jobs = collector.search_jobs()
+    all_jobs = await collector.async_search_jobs(Config.DEFAULT_JOB_TITLES, Config.DEFAULT_LOCATIONS)
 
-    adzuna_response = Config.ADZUNA_CLIENT.last_response # if hasattr(Config.ADZUNA_CLIENT, 'last_response') else {}
-    usa_jobs_response = Config.USA_JOBS_CLIENT.last_response # if hasattr(Config.USA_JOBS_CLIENT, 'last_respone') else {}
+    adzuna_response = Config.ADZUNA_CLIENT.last_response if hasattr(Config.ADZUNA_CLIENT, 'last_response') else {}
+    usa_jobs_response = Config.USA_JOBS_CLIENT.last_response if hasattr(Config.USA_JOBS_CLIENT, 'last_response') else {}
 
     return jsonify({
         "adzuna": adzuna_response,

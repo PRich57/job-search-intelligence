@@ -53,6 +53,14 @@ def get_category_stats():
     stats = [{"category": cat, "count": count} for cat, count in category_counts.items()]
     return jsonify({"stats": stats})
 
+@api.route("/fetch_all_jobs")
+async def fetch_all_jobs():
+    collector = JobDataCollector(Config.ADZUNA_CLIENT, Config.USA_JOBS_CLIENT)
+    jobs = await collector.async_search_jobs(Config.DEFAULT_JOB_TITLES, Config.DEFAULT_LOCATIONS)
+    return jsonify({"adzuna": [job.__dict__ for job in jobs if job.source == "Adzuna"],
+                    "usa_jobs": [job.__dict__ for job in jobs if job.source == "USA Jobs"],
+                    "job_count": len(jobs)})
+
 def format_salary_range(low: float | None, high: float | None) -> str:
     if low is None and high is None:
         return "N/A"

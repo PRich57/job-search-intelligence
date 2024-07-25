@@ -118,6 +118,8 @@ document.addEventListener("DOMContentLoaded", function() {
                         console.error("Error fetching jobs:", error);
                     });
             });
+        } else {
+            console.error("Fetch button not found");
         }
     }
 

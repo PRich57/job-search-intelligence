@@ -16,12 +16,7 @@ class JobDataCollector:
         self.adzuna_client = adzuna_client
         self.usa_jobs_client = usa_jobs_client
 
-    async def async_search_jobs(self, job_titles, locations):
-        if job_titles is None:
-            job_titles = Config.DEFAULT_JOB_TITLES
-        if locations is None:
-            locations = Config.DEFAULT_LOCATIONS
-
+    async def async_search_jobs(self, job_titles: list[str], locations: list[str]) -> list[JobListing]:
         queries = [
             {
                 'query': job_title,
