@@ -1,23 +1,28 @@
+import asyncio
 import logging
+import json
+import random
 from abc import ABC, abstractmethod
-from urllib.parse import quote, urlencode
+from functools import lru_cache
 
 import aiohttp
-import requests
-from ratelimit import limits, sleep_and_retry
 
 from app.models.job_listing import JobListing
-from config import active_config as config
+from config import active_config as Config
 
 logger = logging.getLogger(__name__)
 
 class JobAPIClient(ABC):
     @abstractmethod
-    def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
+    async def async_fetch_jobs_batch(self, session, queries: list[dict]) -> list[JobListing]:
         pass
 
     @abstractmethod
-    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
+    def _create_job_listing(self, job: dict) -> JobListing:
+        pass
+
+    @abstractmethod
+    def _check_experience(self, job: dict, max_experience: int) -> bool:
         pass
 
     def filter_jobs(self, job_listings: list[JobListing]) -> list[JobListing]:
@@ -38,87 +43,75 @@ class JobAPIClient(ABC):
         
         return filtered_jobs
 
-    def analyze_category_codes(self, job_listings: list[JobListing]) -> None:
-        category_codes = {}
-        for job in job_listings:
-            category_codes[job.job_category_code] = category_codes.get(job.job_category_code, 0) + 1
-        
-        logger.info("Category code distribution:")
-        for code, count in sorted(category_codes.items(), key=lambda x: x[1], reverse=True):
-            logger.info(f"{code}: {count}")
-
 class AdzunaAPIClient(JobAPIClient):
-    def __init__(self) -> None:
-        self.app_id = config.ADZUNA_APP_ID
-        self.api_key = config.ADZUNA_API_KEY
-        self.base_url = config.ADZUNA_BASE_URL
-        self.last_response = {}
+    def __init__(self):
+        self.app_id = Config.ADZUNA_APP_ID
+        self.api_key = Config.ADZUNA_API_KEY
+        self.base_url = Config.ADZUNA_BASE_URL
+        self.semaphore = asyncio.Semaphore(2)  # Reduced to 2 concurrent requests
 
-    @sleep_and_retry
-    @limits(calls=100, period=60)
-    def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
+    async def async_fetch_jobs_batch(self, session, queries: list[dict]) -> list[JobListing]:
+        all_jobs = []
+        tasks = []
+
+        for query in queries:
+            task = asyncio.create_task(self._fetch_single_query_with_retry(session, json.dumps(query)))
+            tasks.append(task)
+
+        results = await asyncio.gather(*tasks)
+        for job_listings in results:
+            all_jobs.extend(job_listings)
+
+        logger.info(f"Total Adzuna jobs before filtering: {len(all_jobs)}")
+        filtered_jobs = self.filter_jobs(all_jobs)
+        logger.info(f"Total Adzuna jobs after filtering: {len(filtered_jobs)}")
+        return filtered_jobs
+
+    @lru_cache(maxsize=32)
+    async def _fetch_single_query_with_retry(self, session, query_json, max_retries=3):
+        query = json.loads(query_json)
+        for attempt in range(max_retries):
+            try:
+                async with self.semaphore:
+                    return await self._fetch_single_query(session, query)
+            except aiohttp.ClientResponseError as e:
+                if e.status == 429:
+                    wait_time = 2 ** attempt + random.uniform(0, 1)
+                    logger.warning(f"Rate limit exceeded. Retrying in {wait_time:.2f} seconds...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(f"Error fetching jobs from Adzuna: {e}")
+                    return []
+            except Exception as e:
+                logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
+                return []
+        logger.error(f"Max retries reached for query: {query}")
+        return []
+
+    async def _fetch_single_query(self, session, query):
         params = {
             "app_id": self.app_id,
             "app_key": self.api_key,
-            "results_per_page": limit,
-            "what": query,
-            "max_days_old": 30,
+            "results_per_page": query.get('limit', 100),
+            "what": query['query'],
+            "where": query['location'] if not query.get('remote') else "remote",
             "content-type": "application/json"
         }
-        if remote:
-            params["where"] = "remote"
-        elif location:
-            params["where"] = location
-            if distance:
-                params["distance"] = distance
+        if query.get('distance'):
+            params["distance"] = query['distance']
 
-        try:
-            response = requests.get(self.base_url, params=params)
+        async with session.get(self.base_url, params=params) as response:
             response.raise_for_status()
-            jobs_data = response.json()["results"]
-
-            self.last_response = jobs_data
-
+            data = await response.json()
+            jobs_data = data.get("results", [])
+            logger.info(f"Adzuna query for {params['what']} in {params['where']} returned {len(jobs_data)} jobs")
             job_listings = [
                 self._create_job_listing(job)
                 for job in jobs_data
-                if self._check_experience(job, max_experience)
+                if self._check_experience(job, query.get('max_experience', 5))
             ]
-            
-            self.analyze_category_codes(job_listings)
-            filtered_listings = self.filter_jobs(job_listings)
-            
-            return filtered_listings
-        except requests.RequestException as e:
-            logger.error(f"Error fetching jobs from Adzuna: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
-            return []
-
-    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
-        params = {
-            "app_id": self.app_id,
-            "app_key": self.api_key,
-            "results_per_page": config.DEFAULT_LIMIT,
-            "what": query,
-            "where": location,
-            "content-type": "application/json"
-        }
-        
-        try:
-            async with session.get(self.base_url, params=params) as response:
-                response.raise_for_status()
-                data = await response.json()
-                jobs_data = data.get("results", [])
-                job_listings = [self._create_job_listing(job) for job in jobs_data]
-                return self.filter_jobs(job_listings)
-        except aiohttp.ClientError as e:
-            logger.error(f"Error fetching jobs from Adzuna: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Unexpected error when fetching jobs from Adzuna: {e}")
-            return []
+            logger.info(f"After experience check: {len(job_listings)} jobs")
+            return job_listings
 
     def _create_job_listing(self, job: dict) -> JobListing:
         return JobListing(
@@ -129,97 +122,67 @@ class AdzunaAPIClient(JobAPIClient):
             salary_low=job.get("salary_min"),
             salary_high=job.get("salary_max"),
             source="Adzuna",
-            application_url=job.get("redirect_url", "N/A")
+            application_url=job.get("redirect_url", "N/A"),
+            job_category="N/A",
+            job_category_code="N/A"
         )
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         return "experience" not in job["description"].lower() or f"{max_experience} years" in job["description"].lower()
 
 class USAJobsAPIClient(JobAPIClient):
-    def __init__(self) -> None:
-        self.auth_key = config.USA_JOBS_API_KEY
-        self.email = config.USA_JOBS_EMAIL
-        self.base_url = config.USA_JOBS_BASE_URL
-        self.last_response = {}
+    def __init__(self):
+        self.auth_key = Config.USA_JOBS_API_KEY
+        self.email = Config.USA_JOBS_EMAIL
+        self.base_url = Config.USA_JOBS_BASE_URL
 
-    @sleep_and_retry
-    @limits(calls=50, period=60)
-    def fetch_jobs(self, query: str, location: str | None, remote: bool, distance: int | None, max_experience: int, limit: int) -> list[JobListing]:
-        headers = {
-            "Authorization-Key": self.auth_key,
-            "User-Agent": self.email,
-            "Host": "data.usajobs.gov",
-        }
-        params = {
-            "PositionTitle": query,
-            "ResultsPerPage": limit,
-            "SecurityClearance": "Not Required",
-        }
+    async def async_fetch_jobs_batch(self, session, queries: list[dict]) -> list[JobListing]:
+        all_jobs = []
+        tasks = []
 
-        if remote:
-            params["RemoteIndicator"] = "True"
-        elif location:
-            params["LocationName"] = location
-            if distance:
-                params["Radius"] = distance
+        for query in queries:
+            headers = {
+                "Authorization-Key": self.auth_key,
+                "User-Agent": self.email,
+                "Host": "data.usajobs.gov"
+            }
+            params = {
+                "PositionTitle": query['query'],
+                "ResultsPerPage": query.get('limit', 100),
+                "SecurityClearance": "Not Required",
+            }
 
-        encoded_params = urlencode(params, safe="", quote_via=quote)
-        url = f"{self.base_url}?{encoded_params}"
+            if query.get('remote'):
+                params["RemoteIndicator"] = "True"
+            elif query['location']:
+                params["LocationName"] = query['location']
+                if query.get('distance'):
+                    params["Radius"] = query['distance']
 
-        logger.debug(f"USAJobs API request URL: {url}")
-        logger.debug(f"USAJobs API request headers: {headers}")
+            tasks.append(self._fetch_single_query(session, headers, params, query.get('max_experience', 5)))
 
-        try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            jobs_data = response.json()
+        results = await asyncio.gather(*tasks)
+        for job_listings in results:
+            all_jobs.extend(job_listings)
 
-            self.last_response = jobs_data
+        return self.filter_jobs(all_jobs)
 
-            job_listings = [
-                self._create_job_listing(job)
-                for job in jobs_data.get("SearchResult", {}).get("SearchResultItems", [])
-                if self._check_experience(job, max_experience)
-            ]
-
-            self.analyze_category_codes(job_listings)
-            filtered_listings = self.filter_jobs(job_listings)
-            
-            return filtered_listings
-        except requests.RequestException as e:
-            logger.error(f"Error fetching jobs from USA Jobs: {e}")
-            logger.debug(f"USA Jobs API response: {response.text if 'response' in locals() else 'No response'}")
-            return []
-        except Exception as e:
-            logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
-            self.last_response = {"error": str(e)}
-            return []
-
-    async def async_fetch_jobs(self, session: aiohttp.ClientSession, query: str, location: str) -> list[JobListing]:
-        headers = {
-            "Authorization-Key": self.auth_key,
-            "User-Agent": self.email,
-            "Host": "data.usajobs.gov"
-        }
-        params = {
-            "PositionTitle": query,
-            "LocationName": location,
-            "ResultsPerPage": config.DEFAULT_LIMIT,
-        }
-        
+    async def _fetch_single_query(self, session, headers, params, max_experience):
         try:
             async with session.get(self.base_url, headers=headers, params=params) as response:
                 response.raise_for_status()
                 data = await response.json()
                 jobs_data = data.get("SearchResult", {}).get("SearchResultItems", [])
-                job_listings = [self._create_job_listing(job) for job in jobs_data]
-                return self.filter_jobs(job_listings)
-        except aiohttp.ClientError as e:
+                return [
+                    self._create_job_listing(job)
+                    for job in jobs_data
+                    if self._check_experience(job, max_experience)
+                ]
+        except aiohttp.ClientResponseError as e:
             logger.error(f"Error fetching jobs from USA Jobs: {e}")
-            return []
         except Exception as e:
             logger.error(f"Unexpected error when fetching jobs from USA Jobs: {e}")
-            return []
+        return []
 
     def _create_job_listing(self, job: dict) -> JobListing:
         job_data = job["MatchedObjectDescriptor"]
@@ -242,17 +205,9 @@ class USAJobsAPIClient(JobAPIClient):
         
     def _check_experience(self, job: dict, max_experience: int) -> bool:
         qualifications = job["MatchedObjectDescriptor"].get("QualificationSummary", "").lower()
-        logger.debug(f"Checking experience for job: {job['MatchedObjectDescriptor'].get('PositionTitle', 'N/A')}")
-        logger.debug(f"Qualifications: {qualifications[:100]}...")
-        
         if "experience" not in qualifications:
-            logger.debug("No experience mentioned, including job")
             return True
-        
         for i in range(max_experience + 1):
             if f"{i} year" in qualifications:
-                logger.debug(f"Found {i} year(s) experience requirement, including job")
                 return True
-        
-        logger.debug("Experience requirement exceeds maximum, excluding job")
         return False

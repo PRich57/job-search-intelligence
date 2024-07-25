@@ -1,9 +1,9 @@
+import asyncio
 import logging
 import os
 from datetime import datetime
 
 import pandas as pd
-import asyncio
 import aiohttp
 
 from app.models.job_listing import JobListing
@@ -16,74 +16,52 @@ class JobDataCollector:
         self.adzuna_client = adzuna_client
         self.usa_jobs_client = usa_jobs_client
 
-    def search_jobs(self, job_titles=None, locations=None):
+    async def async_search_jobs(self, job_titles, locations):
         if job_titles is None:
             job_titles = Config.DEFAULT_JOB_TITLES
         if locations is None:
             locations = Config.DEFAULT_LOCATIONS
 
-        return asyncio.run(self.async_search_jobs(job_titles, locations))
+        queries = [
+            {
+                'query': job_title,
+                'location': location,
+                'remote': location.lower() == "remote",
+                'distance': Config.DEFAULT_DISTANCE if location.lower() != "remote" else None,
+                'max_experience': Config.DEFAULT_MAX_EXPERIENCE,
+                'limit': Config.DEFAULT_LIMIT,
+            }
+            for job_title in job_titles
+            for location in locations
+        ]
 
-    async def async_search_jobs(self, job_titles, locations):
-        all_jobs = []
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            for job_title in job_titles:
-                for location in locations:
-                    remote = location.lower() == "remote"
-                    for source in ["adzuna", "usajobs"]:
-                        logger.info(f"Fetching {'remote' if remote else 'local'} {job_title} jobs in {location} from {source.capitalize()}...")
-                        task = self.async_collect_jobs(
-                            session=session,
-                            query=job_title,
-                            location=None if remote else location,
-                            remote=remote,
-                            distance=Config.DEFAULT_DISTANCE if not remote else None,
-                            max_experience=Config.DEFAULT_MAX_EXPERIENCE,
-                            limit=Config.DEFAULT_LIMIT,
-                            source=source
-                        )
-                        tasks.append(task)
+        timeout = aiohttp.ClientTimeout(total=120)  # 2 minutes timeout
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            adzuna_task = self.adzuna_client.async_fetch_jobs_batch(session, queries)
+            usajobs_task = self.usa_jobs_client.async_fetch_jobs_batch(session, queries)
             
-            results = await asyncio.gather(*tasks)
-            for source_jobs in results:
-                all_jobs.extend(source_jobs)
-                logger.info(f"Found {len(source_jobs)} jobs")
+            adzuna_jobs, usajobs_jobs = await asyncio.gather(adzuna_task, usajobs_task)
+            
+            logger.info(f"Adzuna jobs: {len(adzuna_jobs)}")
+            logger.info(f"USA Jobs: {len(usajobs_jobs)}")
+            
+            all_jobs = adzuna_jobs + usajobs_jobs
+
+        unique_jobs = self._deduplicate_jobs(all_jobs)
         
-        return all_jobs
+        logger.info(f"Total unique jobs found: {len(unique_jobs)}")
+        return unique_jobs
 
-    def collect_jobs(self, query, location, remote=Config.DEFAULT_REMOTE, 
-                     distance=Config.DEFAULT_DISTANCE, max_experience=Config.DEFAULT_MAX_EXPERIENCE, 
-                     limit=Config.DEFAULT_LIMIT, source="all"):
-        try:
-            if source == "adzuna":
-                return self.adzuna_client.fetch_jobs(query, location, remote, distance, max_experience, limit)
-            elif source == "usajobs":
-                return self.usa_jobs_client.fetch_jobs(query, location, remote, distance, max_experience, limit)
-            else:
-                adzuna_jobs = self.adzuna_client.fetch_jobs(query, location, remote, distance, max_experience, limit)
-                usa_jobs = self.usa_jobs_client.fetch_jobs(query, location, remote, distance, max_experience, limit)
-                return adzuna_jobs + usa_jobs
-        except Exception as e:
-            logger.error(f"Error collecting jobs from {source}: {str(e)}")
-            return []
+    def _deduplicate_jobs(self, jobs: list[JobListing]) -> list[JobListing]:
+        job_dict = {}
+        for job in jobs:
+            key = (job.job_title, job.company_name, job.job_location, job.source)
+            if key not in job_dict:
+                job_dict[key] = job
+            elif job.source == "USA Jobs":  # Prioritize USA Jobs listings
+                job_dict[key] = job
+        return list(job_dict.values())
 
-    async def async_collect_jobs(self, session, query, location, remote=Config.DEFAULT_REMOTE, 
-                                 distance=Config.DEFAULT_DISTANCE, max_experience=Config.DEFAULT_MAX_EXPERIENCE, 
-                                 limit=Config.DEFAULT_LIMIT, source="all"):
-        try:
-            if source == "adzuna":
-                return await self.adzuna_client.async_fetch_jobs(session, query, location)
-            elif source == "usajobs":
-                return await self.usa_jobs_client.async_fetch_jobs(session, query, location)
-            else:
-                adzuna_jobs = await self.adzuna_client.async_fetch_jobs(session, query, location)
-                usa_jobs = await self.usa_jobs_client.async_fetch_jobs(session, query, location)
-                return adzuna_jobs + usa_jobs
-        except Exception as e:
-            logger.error(f"Error collecting jobs from {source}: {str(e)}")
-            return []
-    
     def save_to_csv(self, jobs, filename):
         try:
             os.makedirs(os.path.dirname(filename), exist_ok=True)
